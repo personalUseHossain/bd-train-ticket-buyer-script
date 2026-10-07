@@ -34,8 +34,20 @@ LOGIN_URL = "https://eticket.railway.gov.bd/login"
 SITE_HOST = "eticket.railway.gov.bd"
 API_HOST = "shohoz.com"
 SITEKEY = "0x4AAAAAACNkZ_TxQr_zpcZW"
-DEBUG_PORT = 9222
-PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "browser_profile")
+BASE_PORT = 9222
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def account_settings(account="1"):
+    """Each account gets its OWN debugging port and its OWN browser profile folder,
+    so two copies of the program never attach to each other's browser."""
+    account = str(account).strip() or "1"
+    try:
+        port = BASE_PORT + int(account) - 1
+    except ValueError:
+        port = BASE_PORT + (sum(map(ord, account)) % 500) + 1
+    profile = os.path.join(BASE_DIR, "browser_profile" if account == "1" else f"browser_profile_{account}")
+    return port, profile
 
 _CFT_JS = """
 async ({sitekey, timeoutMs}) => {
@@ -212,7 +224,8 @@ def _is_placeholder(v):
 class BrowserSession:
     """All Playwright calls run on ONE dedicated thread (Playwright's sync API is thread-bound)."""
 
-    def __init__(self):
+    def __init__(self, account="1"):
+        self.port, self.profile_dir = account_settings(account)
         self._ex = ThreadPoolExecutor(max_workers=1)
         self._pw = None
         self._browser = None
@@ -248,26 +261,26 @@ class BrowserSession:
         if self._browser and self._browser.is_connected():
             self._hook_contexts()
             return
-        if not _port_open(DEBUG_PORT):
+        if not _port_open(self.port):
             exe = os.environ.get("BROWSER_PATH") or _find_browser()
-            os.makedirs(PROFILE_DIR, exist_ok=True)
+            os.makedirs(self.profile_dir, exist_ok=True)
             subprocess.Popen([
                 exe,
-                f"--remote-debugging-port={DEBUG_PORT}",
-                f"--user-data-dir={PROFILE_DIR}",
+                f"--remote-debugging-port={self.port}",
+                f"--user-data-dir={self.profile_dir}",
                 "--no-first-run",
                 "--no-default-browser-check",
                 LOGIN_URL,
             ])
         for _ in range(60):
-            if _port_open(DEBUG_PORT):
+            if _port_open(self.port):
                 break
             time.sleep(0.5)
         else:
             raise RuntimeError("Browser did not open its debugging port.")
         if self._pw is None:
             self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.connect_over_cdp(f"http://127.0.0.1:{DEBUG_PORT}")
+        self._browser = self._pw.chromium.connect_over_cdp(f"http://127.0.0.1:{self.port}")
         self._hooked.clear()
         self._hook_contexts()
         self.started = True

@@ -18,6 +18,7 @@ Requires: pip install playwright requests
 
 import json
 import queue
+import sys
 import threading
 import time
 import tkinter as tk
@@ -48,8 +49,12 @@ SEARCH_CLASSES = ["AC_B", "AC_S", "S_CHAIR", "SNIGDHA", "SHOVAN", "F_BERTH", "F_
 
 MAX_SEATS = 4
 CFT_REFRESH_SECONDS = 60
-SAVED_INFO = Path("passenger_info.json")      # stays on your machine
-PAYMENT_FILE = Path("payment_url.txt")
+# Run one copy per account:   python index.py 1     python index.py 2
+ACCOUNT = sys.argv[1].strip() if len(sys.argv) > 1 and sys.argv[1].strip() else "1"
+_SFX = "" if ACCOUNT == "1" else f"_{ACCOUNT}"     # account 1 keeps your old file names
+SAVED_INFO = Path(f"passenger_info{_SFX}.json")    # stays on your machine
+PAYMENT_FILE = Path(f"payment_url{_SFX}.txt")
+TRIP_FILE = Path(f"trip_data{_SFX}.json")
 
 C_FREE, C_TAKEN, C_SELECTED = "#2e9e5b", "#d1d5db", "#2563eb"
 C_TAKEN_FG = "#6b7280"
@@ -135,7 +140,7 @@ class PassengerDialog(tk.Toplevel):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Railway future-ticket buyer")
+        self.title(f"Railway future-ticket buyer - ACCOUNT {ACCOUNT}")
         self.geometry("1280x880")
         self.minsize(1050, 700)
 
@@ -148,7 +153,7 @@ class App(tk.Tk):
         self.selected = {}       # (floor_name, seat_number) -> reference ticket_id
         self.seat_labels = {}
 
-        self.browser = BrowserSession()
+        self.browser = BrowserSession(ACCOUNT)
         self.cft = None
         self.cft_time = 0.0
         self._cft_lock = threading.Lock()
@@ -600,9 +605,9 @@ class App(tk.Tk):
         self.status.set("JSON copied to clipboard")
 
     def save_json(self):
-        with open("trip_data.json", "w", encoding="utf-8") as f:
+        with open(TRIP_FILE, "w", encoding="utf-8") as f:
             f.write(self.out_box.get("1.0", "end").strip())
-        self.status.set("Saved trip_data.json")
+        self.status.set(f"Saved {TRIP_FILE}")
 
     # ------------------------------------------------------------- auto-buy
     @staticmethod
